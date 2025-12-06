@@ -1,0 +1,62 @@
+[gd_scene load_steps=10 format=3 uid="uid://dbrlqhreyyjkn"]
+
+[ext_resource type="Script" uid="uid://6gybu44sylw7" path="res://player.gd" id="1_pq8q7"]
+[ext_resource type="Script" uid="uid://doq2acwr2lqom" path="res://post_processing.gd" id="2_pyidc"]
+[ext_resource type="Shader" uid="uid://umwgxk5ecpa5" path="res://raytracing.gdshader" id="2_vvh5c"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_vho56"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_pyidc"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_vho56"]
+size = Vector3(10, 1, 10)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pq8q7"]
+size = Vector3(10, 1, 10)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_28aoi"]
+render_priority = 0
+shader = ExtResource("2_vvh5c")
+shader_parameter/uSceneMaxDist = 10000000.0
+
+[sub_resource type="QuadMesh" id="QuadMesh_vvh5c"]
+material = SubResource("ShaderMaterial_28aoi")
+flip_faces = true
+size = Vector2(2, 2)
+
+[node name="root" type="Node3D"]
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.46103054, -0.65468806, 0.59902793, -0.39930084, 0.7558992, 0.51882106, -0.79247063, 0, -0.6099101, 0, 4.1393023, 4.887657)
+shadow_enabled = true
+
+[node name="CharacterBody3D" type="CharacterBody3D" parent="."]
+script = ExtResource("1_pq8q7")
+
+[node name="mesh" type="MeshInstance3D" parent="CharacterBody3D"]
+mesh = SubResource("CapsuleMesh_vho56")
+skeleton = NodePath("")
+
+[node name="cam_parent" type="Node3D" parent="CharacterBody3D"]
+
+[node name="Camera3D" type="Camera3D" parent="CharacterBody3D/cam_parent"]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, -3)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CharacterBody3D"]
+shape = SubResource("CapsuleShape3D_pyidc")
+
+[node name="floor" type="RigidBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -5.1950326, 0)
+freeze = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="floor"]
+mesh = SubResource("BoxMesh_vho56")
+skeleton = NodePath("../..")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="floor"]
+shape = SubResource("BoxShape3D_pq8q7")
+
+[node name="PostProcessing" type="MeshInstance3D" parent="."]
+extra_cull_margin = 16384.0
+mesh = SubResource("QuadMesh_vvh5c")
+script = ExtResource("2_pyidc")
