@@ -1,9 +1,7 @@
 shader_type spatial;
 // Prevent the quad from being affected by lighting and fog. This also improves performance.
 render_mode unshaded, fog_disabled;
-
 uniform float uSceneMaxDist = 10000000;
-
 uniform sampler2D depth_texture : hint_depth_texture;
 
 void vertex() {
@@ -42,6 +40,56 @@ void plane_intersection(vec3 normal, float dist, Ray ray, inout RaytraceResult r
 }
 
 
+void process_distance_plane(float dist, Ray ray, inout RaytraceResult result, int index, vec3 anchor, vec3 dimensions){
+	if (dist <= 0.0 || dist >= result.rayDist){
+		return;
+	}
+	vec3 intersection = ray.origin + dist * ray.dir - anchor;
+	if ((intersection.x < 0.0 || intersection.x > dimensions.x) && index != 0){
+		return;
+	}
+	if ((intersection.y < 0.0 || intersection.y > dimensions.y) && index != 1){
+		return;
+	}
+	if ((intersection.z < 0.0 || intersection.z > dimensions.z) && index != 2){
+		return;
+	}
+
+	result.rayDist = dist;
+	result.hit = true;
+	result.colour = vec3(0,0,1);
+}
+
+
+void box_intersection(vec3 anchor, vec3 dimensions, Ray ray, inout RaytraceResult result){
+	// we only need to check the plane which is at the anchor if we are to the left of the anchor
+	float planeXDist;
+	float planeYDist;
+	float planeZDist;
+	if (ray.origin.x <= anchor.x){
+		planeXDist = (ray.origin.x - anchor.x) / ray.dir.x;
+	}
+	else{
+		planeXDist = (ray.origin.x - anchor.x - dimensions.x) / ray.dir.x;
+	}
+	if (ray.origin.y <= anchor.y){
+		planeYDist = (ray.origin.y - anchor.y) / ray.dir.y;
+	}
+	else{
+		planeYDist = (ray.origin.y - anchor.y - dimensions.y) / ray.dir.y;
+	}
+	if (ray.origin.z <= anchor.z){
+		planeZDist = (ray.origin.z - anchor.z) / ray.dir.z;
+	}
+	else{
+		planeZDist = (ray.origin.z - anchor.z - dimensions.z) / ray.dir.z;
+	}
+	process_distance_plane(-planeXDist, ray, result, 0, anchor, dimensions);
+	process_distance_plane(-planeYDist, ray, result, 1, anchor, dimensions);
+	process_distance_plane(-planeZDist, ray, result, 2, anchor, dimensions);
+}
+
+
 void sphere_intersection(vec3 center, float radius, Ray ray, inout RaytraceResult result) {
 	vec3 oc = ray.origin - center;
 	float a = dot(ray.dir, ray.dir); // usually 1 if normalized
@@ -62,8 +110,9 @@ void sphere_intersection(vec3 center, float radius, Ray ray, inout RaytraceResul
 RaytraceResult raytrace_scene(Ray ray, float maxDepth){
 	RaytraceResult ray_result;
 	ray_result.rayDist = maxDepth;
-	sphere_intersection(vec3(10, 0, 0), 10, ray, ray_result);
-	plane_intersection(vec3(0, 1, 0), 5, ray, ray_result);
+	//sphere_intersection(vec3(10, 0, 0), 10, ray, ray_result);
+	//plane_intersection(vec3(0, 1, 0), 5, ray, ray_result);
+	box_intersection(vec3(0, 0, 0), vec3(10, 10, 5), ray, ray_result);
 	return ray_result;
 }
 

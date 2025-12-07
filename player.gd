@@ -30,4 +30,3 @@ func _physics_process(delta):
 	velocity.y += -gravity * delta
 	get_input()
 	move_and_slide()
-	print(self.position.y)
