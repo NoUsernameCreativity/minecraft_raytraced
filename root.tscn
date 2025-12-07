@@ -18,6 +18,8 @@ size = Vector3(10, 1, 10)
 render_priority = 0
 shader = ExtResource("2_vvh5c")
 shader_parameter/uSceneMaxDist = 10000000.0
+shader_parameter/u_viewBoxAnchor = Vector3(0, 0, 0)
+shader_parameter/u_viewBoxDim = Vector3(20, 20, 20)
 
 [sub_resource type="QuadMesh" id="QuadMesh_vvh5c"]
 material = SubResource("ShaderMaterial_28aoi")

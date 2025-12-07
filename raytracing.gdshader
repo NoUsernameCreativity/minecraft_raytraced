@@ -4,44 +4,51 @@ render_mode unshaded, fog_disabled;
 uniform float uSceneMaxDist = 10000000;
 uniform sampler2D depth_texture : hint_depth_texture;
 
+uniform vec3 u_viewBoxAnchor = vec3(0, 0, 0);
+uniform vec3 u_viewBoxDim = vec3(20, 20, 20);
+
+/*
+Vertex shader, keeps the mesh vertices over the screen
+*/
 void vertex() {
   POSITION = vec4(VERTEX.xy, 1.0, 1.0);
 }
 
+
+/*
+Ray struct, for storing a ray.
+*/
 struct Ray{
 	vec3 origin;
 	vec3 dir;
-};
-
-struct RaytraceResult{
-	vec3 colour;
+	float dist;
 	bool hit;
-	vec3 rayOrigin;
-	float rayDist;
+	vec3 colour;
 };
 
-void plane_intersection(vec3 normal, float dist, Ray ray, inout RaytraceResult result) {
+
+void plane_intersection(vec3 normal, float dist, inout Ray ray) {
 	float rDot = dot(normal, ray.dir);
 
 	float t = -(dot(normal, ray.origin) + dist) / rDot;
-	if (t > 0.0 && t < result.rayDist) {
-		result.rayDist = t;
-		result.hit = true;
+	if (t > 0.0 && t < ray.dist) {
+		ray.dist = t;
+		ray.hit = true;
 
 		vec3 intersect = ray.origin + t * ray.dir;
 
 		// Example checkerboard colouring
 		if (mod(floor(intersect.x/10.0) + floor(intersect.z/10.0), 2) < 1.0) {
-			result.colour = vec3(0,1,0);
+			ray.colour = vec3(0,1,0);
 		} else {
-			result.colour = vec3(0,0,1);
+			ray.colour = vec3(0,0,1);
 		}
 	}
 }
 
 
-void process_distance_plane(float dist, Ray ray, inout RaytraceResult result, int index, vec3 anchor, vec3 dimensions){
-	if (dist <= 0.0 || dist >= result.rayDist){
+void process_distance_plane(float dist, inout Ray ray, int index, vec3 anchor, vec3 dimensions){
+	if (dist <= 0.0 || dist >= ray.dist){
 		return;
 	}
 	vec3 intersection = ray.origin + dist * ray.dir - anchor;
@@ -55,13 +62,16 @@ void process_distance_plane(float dist, Ray ray, inout RaytraceResult result, in
 		return;
 	}
 
-	result.rayDist = dist;
-	result.hit = true;
-	result.colour = vec3(0,0,1);
+	ray.dist = dist;
+	ray.hit = true;
+	ray.colour = vec3(0,0,1);
 }
 
 
-void box_intersection(vec3 anchor, vec3 dimensions, Ray ray, inout RaytraceResult result){
+/*
+Box intersection function.
+*/
+void box_intersection(vec3 anchor, vec3 dimensions, inout Ray ray){
 	// we only need to check the plane which is at the anchor if we are to the left of the anchor
 	float planeXDist;
 	float planeYDist;
@@ -84,36 +94,71 @@ void box_intersection(vec3 anchor, vec3 dimensions, Ray ray, inout RaytraceResul
 	else{
 		planeZDist = (ray.origin.z - anchor.z - dimensions.z) / ray.dir.z;
 	}
-	process_distance_plane(-planeXDist, ray, result, 0, anchor, dimensions);
-	process_distance_plane(-planeYDist, ray, result, 1, anchor, dimensions);
-	process_distance_plane(-planeZDist, ray, result, 2, anchor, dimensions);
+	process_distance_plane(-planeXDist, ray, 0, anchor, dimensions);
+	process_distance_plane(-planeYDist, ray, 1, anchor, dimensions);
+	process_distance_plane(-planeZDist, ray, 2, anchor, dimensions);
 }
 
-
-void sphere_intersection(vec3 center, float radius, Ray ray, inout RaytraceResult result) {
-	vec3 oc = ray.origin - center;
-	float a = dot(ray.dir, ray.dir); // usually 1 if normalized
-	float b = 2.0 * dot(oc, ray.dir);
-	float c = dot(oc, oc) - radius * radius;
-	float discriminant = b*b - 4.0*a*c;
-
-	if (discriminant < 0.0) return; // no hit
-
-	float t = 0.5 * (-b - sqrt(discriminant)) / a; // nearest root
-	if (t > 0.0 && t < result.rayDist) {
-		result.rayDist = t;
-		result.hit = true;
-		result.colour = vec3(1,0,0);
+bool insideSceneBox(vec3 pos){
+	vec3 dc = pos - u_viewBoxAnchor;
+	if ((dc.x < 0.0 || dc.x > u_viewBoxDim.x)){
+		return false;
 	}
+	if ((dc.y < 0.0 || dc.y > u_viewBoxDim.y)){
+		return false;
+	}
+	if ((dc.z < 0.0 || dc.z > u_viewBoxDim.z)){
+		return false;
+	}
+	return true;
 }
 
-RaytraceResult raytrace_scene(Ray ray, float maxDepth){
-	RaytraceResult ray_result;
-	ray_result.rayDist = maxDepth;
-	//sphere_intersection(vec3(10, 0, 0), 10, ray, ray_result);
-	//plane_intersection(vec3(0, 1, 0), 5, ray, ray_result);
-	box_intersection(vec3(0, 0, 0), vec3(10, 10, 5), ray, ray_result);
-	return ray_result;
+/*
+This code jumps the ray to the scene box, if the ray is not inside the scene box already.
+Returns false if the player is not inside the box or if the ray misses the box.
+*/
+bool raytrace_to_scene_box(inout Ray ray){
+	if (insideSceneBox(ray.origin)){
+		return true;
+	}
+
+	Ray temp_ray;
+	temp_ray.origin = ray.origin;
+	temp_ray.dir = ray.dir;
+	temp_ray.dist = ray.dist;
+	box_intersection(u_viewBoxAnchor, u_viewBoxDim, temp_ray);
+	if (temp_ray.hit){
+		ray = temp_ray;
+		return true;
+	}
+	return false;
+}
+
+
+
+
+/*
+Main function to raytrace the scene. Mixes together intersections
+*/
+Ray raytrace_scene(Ray ray, float maxDepth){
+	Ray ray_result;
+	ray_result.origin = ray.origin;
+	ray_result.dir = ray.dir;
+	ray_result.dist = maxDepth;
+
+	if (!raytrace_to_scene_box(ray_result)){
+		return ray_result;
+	}
+
+	Ray new_ray;
+	new_ray.origin = ray_result.origin;
+	new_ray.hit = false;
+	new_ray.dir = ray.dir;
+	new_ray.dist = maxDepth;
+
+	plane_intersection(vec3(0, 1, 0), 10, new_ray);
+	box_intersection(vec3(20, 0, 0), vec3(10, 10, 5), new_ray);
+	return new_ray;
 }
 
 void fragment() {
@@ -145,8 +190,7 @@ void fragment() {
 	ray.dir = ray_dir;
 	ray.origin = ray_origin;
 
-	RaytraceResult res = raytrace_scene(ray, min(linear_depth, uSceneMaxDist));
-
+	Ray res = raytrace_scene(ray, min(linear_depth, uSceneMaxDist));
 	if (res.hit){
 		ALBEDO = res.colour;
 		ALPHA = 1.0;
