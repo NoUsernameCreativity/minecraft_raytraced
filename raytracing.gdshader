@@ -74,56 +74,30 @@ void plane_intersection(vec3 normal, float dist, inout Ray ray) {
 }
 
 
-void process_distance_plane(float dist, inout Ray ray, int index, vec3 anchor, vec3 dimensions){
-	if (dist <= 0.0 || dist >= ray.dist){
-		return;
-	}
-	vec3 intersection = ray.origin + dist * ray.dir - anchor;
-	if ((intersection.x < 0.0 || intersection.x > dimensions.x) && index != 0){
-		return;
-	}
-	if ((intersection.y < 0.0 || intersection.y > dimensions.y) && index != 1){
-		return;
-	}
-	if ((intersection.z < 0.0 || intersection.z > dimensions.z) && index != 2){
-		return;
-	}
-
-	ray.dist = dist;
-	ray.hit = true;
-	ray.colour = vec3(0,0,1);
-}
-
 
 /*
 Box intersection function.
 */
 void box_intersection(vec3 anchor, vec3 dimensions, inout Ray ray){
 	// we only need to check the plane which is at the anchor if we are to the left of the anchor
-	float planeXDist;
-	float planeYDist;
-	float planeZDist;
-	if (ray.origin.x <= anchor.x){
-		planeXDist = (ray.origin.x - anchor.x) / ray.dir.x;
+	float near;
+	float far;
+	if(!aabb_intersect(anchor, dimensions, ray.origin, ray.dir, near, far)){
+		return;
 	}
-	else{
-		planeXDist = (ray.origin.x - anchor.x - dimensions.x) / ray.dir.x;
+	if (near > 0.0 && near < ray.dist) {
+		ray.dist = near;
+		ray.hit = true;
+
+		ray.colour = vec3(0.0, 0.0, 1.0);
+		return;
 	}
-	if (ray.origin.y <= anchor.y){
-		planeYDist = (ray.origin.y - anchor.y) / ray.dir.y;
+	if (far > 0.0 && far < ray.dist) {
+		ray.dist = far;
+		ray.hit = true;
+
+		ray.colour = vec3(0.0, 0.0, 1.0);
 	}
-	else{
-		planeYDist = (ray.origin.y - anchor.y - dimensions.y) / ray.dir.y;
-	}
-	if (ray.origin.z <= anchor.z){
-		planeZDist = (ray.origin.z - anchor.z) / ray.dir.z;
-	}
-	else{
-		planeZDist = (ray.origin.z - anchor.z - dimensions.z) / ray.dir.z;
-	}
-	process_distance_plane(-planeXDist, ray, 0, anchor, dimensions);
-	process_distance_plane(-planeYDist, ray, 1, anchor, dimensions);
-	process_distance_plane(-planeZDist, ray, 2, anchor, dimensions);
 }
 
 bool insideSceneBox(vec3 pos){
@@ -154,7 +128,7 @@ bool raytrace_to_scene_box(inout Ray ray){
 
 	if (insideSceneBox(ray.origin)){
 		ray.hit = true;
-		ray.dist = tExit;
+		ray.dist = min(ray.dist, tExit);
 		return true;
 	}
 
@@ -208,7 +182,7 @@ Ray raytrace_scene(Ray ray, float maxDepth){
 	new_ray.colour = vec3(0.0);
 
 	plane_intersection(vec3(0, 1, 0), -5, new_ray);
-	box_intersection(vec3(15, 0, 0), vec3(10, 10, 5), new_ray);
+	box_intersection(vec3(15, 0, -1), vec3(10, 10, 5), new_ray);
 	return new_ray;
 }
 
