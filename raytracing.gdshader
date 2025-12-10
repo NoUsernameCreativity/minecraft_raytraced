@@ -26,6 +26,33 @@ struct Ray{
 	vec3 colour;
 };
 
+// Returns whether the ray intersects the axis-aligned box [anchor, anchor+dimensions].
+// If true, writes entry/exit distances (tEnter, tExit) along ray.dir.
+bool aabb_intersect(vec3 anchor, vec3 dimensions, vec3 ro, vec3 rd, out float tEnter, out float tExit) {
+	vec3 minB = anchor;
+	vec3 maxB = anchor + dimensions;
+
+	// For each axis compute t for intersections with slabs
+	vec3 inv = vec3(
+		rd.x != 0.0 ? 1.0 / rd.x : 1e16,  // large sentinel when parallel
+		rd.y != 0.0 ? 1.0 / rd.y : 1e16,
+		rd.z != 0.0 ? 1.0 / rd.z : 1e16
+	);
+
+	vec3 t0 = (minB - ro) * inv;
+	vec3 t1 = (maxB - ro) * inv;
+
+	// Sort per axis
+	vec3 tmin = min(t0, t1);
+	vec3 tmax = max(t0, t1);
+
+	// Aggregate
+	tEnter = max(max(tmin.x, tmin.y), tmin.z);
+	tExit  = min(min(tmax.x, tmax.y), tmax.z);
+
+	// Valid intersection if slabs overlap and tExit >= 0
+	return (tExit >= tEnter) && (tExit >= 0.0);
+}
 
 void plane_intersection(vec3 normal, float dist, inout Ray ray) {
 	float rDot = dot(normal, ray.dir);
@@ -118,21 +145,42 @@ This code jumps the ray to the scene box, if the ray is not inside the scene box
 Returns false if the player is not inside the box or if the ray misses the box.
 */
 bool raytrace_to_scene_box(inout Ray ray){
+	ray.hit = false;
+
+	float tEnter, tExit;
+	if (!aabb_intersect(u_viewBoxAnchor, u_viewBoxDim, ray.origin, ray.dir, tEnter, tExit)) {
+		return false;
+	}
+
 	if (insideSceneBox(ray.origin)){
+		ray.hit = true;
+		ray.dist = tExit;
 		return true;
 	}
 
-	Ray temp_ray;
-	temp_ray.origin = ray.origin;
-	temp_ray.dir = ray.dir;
-	temp_ray.dist = ray.dist;
-	box_intersection(u_viewBoxAnchor, u_viewBoxDim, temp_ray);
-	if (temp_ray.hit){
-		ray = temp_ray;
-		return true;
+	// If entry is behind origin, try the exit
+	if (tEnter < 0.0) {
+		tEnter = tExit;
 	}
-	return false;
+
+	// Require entry is below the raydist
+	if (tEnter >= ray.dist) {
+		return false;
+	}
+
+	// Move origin to entry point and reduce remaining distance
+	ray.origin += tEnter * ray.dir;
+	ray.dist -= tEnter;
+	// ensure the ray will not leave the box
+	ray.dist = min(ray.dist, tExit - tEnter);
+
+	// Optional: mark that we have entered the box
+	ray.hit = true;
+	ray.colour = vec3(0.0, 0.0, 0.0); // not used for jump, but initialized
+
+	return true;
 }
+
 
 
 
@@ -145,6 +193,8 @@ Ray raytrace_scene(Ray ray, float maxDepth){
 	ray_result.origin = ray.origin;
 	ray_result.dir = ray.dir;
 	ray_result.dist = maxDepth;
+	ray_result.hit = false;
+	ray_result.colour = vec3(0.0);
 
 	if (!raytrace_to_scene_box(ray_result)){
 		return ray_result;
@@ -154,10 +204,11 @@ Ray raytrace_scene(Ray ray, float maxDepth){
 	new_ray.origin = ray_result.origin;
 	new_ray.hit = false;
 	new_ray.dir = ray.dir;
-	new_ray.dist = maxDepth;
+	new_ray.dist = ray_result.dist;
+	new_ray.colour = vec3(0.0);
 
-	plane_intersection(vec3(0, 1, 0), 10, new_ray);
-	box_intersection(vec3(20, 0, 0), vec3(10, 10, 5), new_ray);
+	plane_intersection(vec3(0, 1, 0), -5, new_ray);
+	box_intersection(vec3(15, 0, 0), vec3(10, 10, 5), new_ray);
 	return new_ray;
 }
 
@@ -183,6 +234,11 @@ void fragment() {
 	view.xyz /= view.w;
 	float linear_depth = -view.z;
 
+	// This is depth in view space. We want depth in world space
+	vec4 world = INV_VIEW_MATRIX * INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
+	vec3 world_position = world.xyz / world.w;
+	float currentDepthWorld = length(world_position - ray_origin);
+
 	// actually march ray
 
 
@@ -190,7 +246,7 @@ void fragment() {
 	ray.dir = ray_dir;
 	ray.origin = ray_origin;
 
-	Ray res = raytrace_scene(ray, min(linear_depth, uSceneMaxDist));
+	Ray res = raytrace_scene(ray, min(currentDepthWorld, uSceneMaxDist));
 	if (res.hit){
 		ALBEDO = res.colour;
 		ALPHA = 1.0;
