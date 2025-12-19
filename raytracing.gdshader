@@ -1,6 +1,14 @@
+/*
+Important to make some of these instance specific
+*/
+
 shader_type spatial;
 // Prevent the quad from being affected by lighting and fog. This also improves performance.
-render_mode unshaded, fog_disabled;
+render_mode unshaded, fog_disabled, cull_disabled;
+render_mode depth_draw_opaque; // may be required for painters algo
+// To make sure we can write to depth texture
+
+
 uniform float uSceneMaxDist = 10000000;
 uniform int uRaycastMaxIterations = 10000;
 const float forward_bias_epsilon = 0.00001;
@@ -8,8 +16,10 @@ uniform sampler2D depth_texture : hint_depth_texture;
 
 uniform sampler3D u_voxelDataTexture;
 
-uniform vec3 u_viewBoxAnchor = vec3(0, 0, 0);
-uniform vec3 u_viewBoxDim = vec3(20, 20, 20);
+instance uniform vec3 u_viewBoxAnchor = vec3(0, 0, 0);
+instance uniform vec3 u_viewBoxTransformOrigin = vec3(0, 0, 0);
+instance uniform vec3 u_viewBoxDim = vec3(20, 20, 20);
+
 uniform vec3 u_directionalSunDirection = vec3(-10, -30, 5);
 
 uniform float u_diffuseMultiplier = 0.8;
@@ -120,7 +130,7 @@ void voxel_grid_intrsection(inout Ray ray){
 	float dist = 0.0;
 	ivec3 normalMask;
 	
-	while (iterations < uRaycastMaxIterations && dist < ray.dist){
+	while (iterations < uRaycastMaxIterations && dist + forward_bias_epsilon < ray.dist){
 		if (is_voxel_hit(u)){
 			break;
 		}
@@ -157,7 +167,7 @@ void voxel_grid_intrsection(inout Ray ray){
 		iterations++;
 	}
 	
-	if (iterations >= uRaycastMaxIterations || dist >= ray.dist){
+	if (iterations >= uRaycastMaxIterations || dist + forward_bias_epsilon >= ray.dist){
 		return;
 	}
 	ray.dist = dist;
@@ -243,7 +253,7 @@ bool raytrace_to_scene_box(inout Ray ray){
 	ray.origin += (tEnter + forward_bias_epsilon) * ray.dir;
 	ray.dist -= tEnter + forward_bias_epsilon;
 	// ensure the ray will not leave the box
-	ray.dist = min(ray.dist, tExit - tEnter);
+	ray.dist = min(ray.dist, tExit - tEnter - forward_bias_epsilon);
 
 	// Optional: mark that we have entered the box
 	ray.hitInfo.hit = true;
@@ -307,7 +317,7 @@ void fragment() {
 	vec4 worldPos = INV_VIEW_MATRIX * viewPos;
 
 	// Step 3: ray origin and direction
-	vec3 ray_origin = (INV_VIEW_MATRIX[3]).xyz; // camera position
+	vec3 ray_origin = (INV_VIEW_MATRIX[3]).xyz; // camera position, fixed based on anchor
 	vec3 ray_dir = normalize(worldPos.xyz - ray_origin);
 
 	// get depth
@@ -327,7 +337,7 @@ void fragment() {
 
 	Ray ray;
 	ray.dir = ray_dir;
-	ray.origin = ray_origin;
+	ray.origin = ray_origin - u_viewBoxTransformOrigin;
 
 	Ray res = raytrace_scene(ray, min(currentDepthWorld, uSceneMaxDist));
 	if (res.hitInfo.hit){

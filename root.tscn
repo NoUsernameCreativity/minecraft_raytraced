@@ -1,9 +1,8 @@
-[gd_scene load_steps=11 format=3 uid="uid://dbrlqhreyyjkn"]
+[gd_scene load_steps=8 format=3 uid="uid://dbrlqhreyyjkn"]
 
 [ext_resource type="Script" uid="uid://6gybu44sylw7" path="res://player.gd" id="1_pq8q7"]
-[ext_resource type="Script" uid="uid://doq2acwr2lqom" path="res://post_processing.gd" id="2_pyidc"]
-[ext_resource type="Shader" uid="uid://umwgxk5ecpa5" path="res://raytracing.gdshader" id="2_vvh5c"]
-[ext_resource type="ImageTexture3D" path="res://3d_texture.res" id="3_28aoi"]
+[ext_resource type="PackedScene" uid="uid://dyw1cngj1u27a" path="res://chunk_post_processed.tscn" id="2_vvh5c"]
+[ext_resource type="Script" uid="uid://bncmmrxg6lib" path="res://chunk_handler.gd" id="5_jnlp7"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_vho56"]
 
@@ -14,23 +13,6 @@ size = Vector3(100, 1, 100)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_pq8q7"]
 size = Vector3(100, 1, 100)
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_28aoi"]
-render_priority = 0
-shader = ExtResource("2_vvh5c")
-shader_parameter/uSceneMaxDist = 10000000.0
-shader_parameter/uRaycastMaxIterations = 10000
-shader_parameter/u_voxelDataTexture = ExtResource("3_28aoi")
-shader_parameter/u_viewBoxAnchor = Vector3(0, 0, 0)
-shader_parameter/u_viewBoxDim = Vector3(20, 20, 20)
-shader_parameter/u_directionalSunDirection = Vector3(10, 30, 5)
-shader_parameter/u_diffuseMultiplier = 0.8
-shader_parameter/u_diffuseAmbient = 0.2
-
-[sub_resource type="QuadMesh" id="QuadMesh_vvh5c"]
-material = SubResource("ShaderMaterial_28aoi")
-flip_faces = true
-size = Vector2(2, 2)
 
 [node name="root" type="Node3D"]
 
@@ -48,7 +30,7 @@ skeleton = NodePath("")
 [node name="cam_parent" type="Node3D" parent="CharacterBody3D"]
 
 [node name="Camera3D" type="Camera3D" parent="CharacterBody3D/cam_parent"]
-transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, -3)
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="CharacterBody3D"]
 shape = SubResource("CapsuleShape3D_pyidc")
@@ -64,8 +46,8 @@ skeleton = NodePath("../..")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="floor"]
 shape = SubResource("BoxShape3D_pq8q7")
 
-[node name="PostProcessing" type="MeshInstance3D" parent="." node_paths=PackedStringArray("directionalLight")]
-extra_cull_margin = 16384.0
-mesh = SubResource("QuadMesh_vvh5c")
-script = ExtResource("2_pyidc")
-directionalLight = NodePath("../DirectionalLight3D")
+[node name="ChunkHandler" type="Node3D" parent="." node_paths=PackedStringArray("directionalLightSource", "player")]
+script = ExtResource("5_jnlp7")
+directionalLightSource = NodePath("../DirectionalLight3D")
+player = NodePath("../CharacterBody3D")
+ChunkPostProcessedPrefab = ExtResource("2_vvh5c")

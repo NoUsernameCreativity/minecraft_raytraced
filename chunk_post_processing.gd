@@ -1,8 +1,7 @@
 extends MeshInstance3D
 
 #Optimisation for the shader (small) by representing it as a triangle
-@export var cubeDimensions : Vector3 = Vector3(32, 64, 32)
-@export var directionalLight : DirectionalLight3D
+@export var cubeDimensions : Vector3 = Vector3(16, 64, 16)
 
 var finalImageTexture : ImageTexture3D
 
@@ -16,7 +15,7 @@ func _ready():
 		for y in range(0, cubeDimensions.y):
 			var oneDimArray = []
 			for z in range(0, cubeDimensions.z):
-				if randf() < 0.1:
+				if randf() < 0.01:
 					oneDimArray.append(Vector3(1, 0, 0))
 				else:
 					oneDimArray.append(Vector3.ZERO)
@@ -40,13 +39,13 @@ func _ready():
 	finalImageTexture = ImageTexture3D.new()
 	finalImageTexture.create(Image.FORMAT_RGBA8, cubeDimensions.x, cubeDimensions.y, cubeDimensions.z, false, imageSlices)
 	
-	self.get_active_material(0).set_shader_parameter("u_voxelDataTexture", finalImageTexture)
-	self.get_active_material(0).set_shader_parameter("u_directionalSunDirection", -directionalLight.global_transform.basis.z)
-	self.get_active_material(0).set_shader_parameter("u_viewBoxDim", cubeDimensions)
+	# Instance is important here
+	self.set_instance_shader_parameter("u_voxelDataTexture", finalImageTexture)
+	self.set_instance_shader_parameter("u_viewBoxTransformOrigin", self.global_transform.origin)
 	
 	# optional code to save the image texture
-	if true:
-		ResourceSaver.save(finalImageTexture, "3d_texture.res")
+	#if true:
+		#ResourceSaver.save(finalImageTexture, "3d_texture.res")
 		
 
 
