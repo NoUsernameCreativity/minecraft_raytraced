@@ -1,9 +1,9 @@
 extends CharacterBody3D
 
 var gravity = ProjectSettings.get_setting("physics/3d/default_gravity")
-var speed = 8.0  # movement speed
-var jump_speed = 6.0  # determines jump height
-var mouse_sensitivity = 0.005  # turning speed
+@export var speed = 8.0  # movement speed
+@export var jump_speed = 6.0  # determines jump height
+@export var mouse_sensitivity = 0.005  # turning speed
 @onready var cam_parent = $cam_parent
 
 func _init() -> void:

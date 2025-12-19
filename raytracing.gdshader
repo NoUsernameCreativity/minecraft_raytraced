@@ -2,10 +2,18 @@ shader_type spatial;
 // Prevent the quad from being affected by lighting and fog. This also improves performance.
 render_mode unshaded, fog_disabled;
 uniform float uSceneMaxDist = 10000000;
+uniform int uRaycastMaxIterations = 10000;
+const float forward_bias_epsilon = 0.00001;
 uniform sampler2D depth_texture : hint_depth_texture;
+
+uniform sampler3D u_voxelDataTexture;
 
 uniform vec3 u_viewBoxAnchor = vec3(0, 0, 0);
 uniform vec3 u_viewBoxDim = vec3(20, 20, 20);
+uniform vec3 u_directionalSunDirection = vec3(10, 30, 5);
+
+uniform float u_diffuseMultiplier = 0.8;
+uniform float u_diffuseAmbient = 0.2;
 
 /*
 Vertex shader, keeps the mesh vertices over the screen
@@ -14,6 +22,14 @@ void vertex() {
   POSITION = vec4(VERTEX.xy, 1.0, 1.0);
 }
 
+/*
+Hit struct, storing all information for when a ray hits a surface
+*/
+struct Ray_Hit{
+	bool hit; 
+	vec3 colour;
+	vec3 normal;
+};
 
 /*
 Ray struct, for storing a ray.
@@ -22,8 +38,7 @@ struct Ray{
 	vec3 origin;
 	vec3 dir;
 	float dist;
-	bool hit;
-	vec3 colour;
+	Ray_Hit hitInfo;
 };
 
 // Returns whether the ray intersects the axis-aligned box [anchor, anchor+dimensions].
@@ -60,17 +75,99 @@ void plane_intersection(vec3 normal, float dist, inout Ray ray) {
 	float t = -(dot(normal, ray.origin) + dist) / rDot;
 	if (t > 0.0 && t < ray.dist) {
 		ray.dist = t;
-		ray.hit = true;
+		ray.hitInfo.hit = true;
 
 		vec3 intersect = ray.origin + t * ray.dir;
 
 		// Example checkerboard colouring
 		if (mod(floor(intersect.x/10.0) + floor(intersect.z/10.0), 2) < 1.0) {
-			ray.colour = vec3(0,1,0);
+			ray.hitInfo.colour = vec3(0,1,0);
 		} else {
-			ray.colour = vec3(0,0,1);
+			ray.hitInfo.colour = vec3(0,0,1);
 		}
 	}
+}
+
+bool is_voxel_hit(ivec3 position){
+	ivec3 texSize = textureSize(u_voxelDataTexture, 0);
+	if (position.x >= texSize.x || position.x < 0){
+		return false;
+	}
+	if (position.y >= texSize.y || position.y < 0){
+		return false;
+	}
+	if (position.z >= texSize.z || position.z < 0){
+		return false;
+	}
+	
+	vec4 texelAtPos = texelFetch(u_voxelDataTexture, position, 0); 
+	if(texelAtPos.x == 0.0 && texelAtPos.y == 0.0 && texelAtPos.z == 0.0 && texelAtPos.a == 0.0){
+		return false;
+	}
+	return true;
+}
+
+void voxel_grid_intrsection(inout Ray ray){
+	ivec3 u = ivec3(ray.origin);
+	vec3 tDelta = 1.0 / abs(ray.dir);
+	ivec3 stepDir = ivec3(sign(ray.dir));
+	
+	vec3 tMax = vec3(u) - ray.origin;
+	tMax = tMax * vec3(stepDir) + vec3(stepDir) * 0.5 + vec3(0.5);
+	tMax *= tDelta;
+	
+	int iterations = 0; 
+	float dist = 0.0;
+	ivec3 normalMask;
+	
+	while (iterations < uRaycastMaxIterations && dist < ray.dist){
+		if (is_voxel_hit(u)){
+			break;
+		}
+		
+		if (tMax.x < tMax.y){
+			if (tMax.x < tMax.z){
+				dist = tMax.x;
+				u.x += stepDir.x;
+				tMax.x += tDelta.x;
+				normalMask = ivec3(1, 0, 0);
+			}
+			else{
+				dist = tMax.z;
+				u.z += stepDir.z;
+				tMax.z += tDelta.z;
+				normalMask = ivec3(0, 0, 1);
+			}
+		}
+		else{
+			if (tMax.y < tMax.z){
+				dist = tMax.y;
+				u.y += stepDir.y;
+				tMax.y += tDelta.y;
+				normalMask = ivec3(0, 1, 0);
+			}
+			else{
+				dist = tMax.z;
+				u.z += stepDir.z;
+				tMax.z += tDelta.z;
+				normalMask = ivec3(0, 0, 1);
+			}
+		}
+		
+		iterations++;
+	}
+	
+	if (iterations >= uRaycastMaxIterations || dist >= ray.dist){
+		return;
+	}
+	ray.dist = dist;
+	ray.hitInfo.colour = vec3(1.0, 0.0, 0.0);
+	ray.hitInfo.hit = true;
+	if (iterations == 0){
+		ray.hitInfo.normal = vec3(0, 0, 0); // inside the block, so normal shouldn't matter if this occurs
+		return;
+	}
+	ray.hitInfo.normal = vec3(stepDir * normalMask);
 }
 
 
@@ -87,16 +184,16 @@ void box_intersection(vec3 anchor, vec3 dimensions, inout Ray ray){
 	}
 	if (near > 0.0 && near < ray.dist) {
 		ray.dist = near;
-		ray.hit = true;
+		ray.hitInfo.hit = true;
 
-		ray.colour = vec3(0.0, 0.0, 1.0);
+		ray.hitInfo.colour = vec3(0.0, 0.0, 1.0);
 		return;
 	}
 	if (far > 0.0 && far < ray.dist) {
 		ray.dist = far;
-		ray.hit = true;
+		ray.hitInfo.hit = true;
 
-		ray.colour = vec3(0.0, 0.0, 1.0);
+		ray.hitInfo.colour = vec3(0.0, 0.0, 1.0);
 	}
 }
 
@@ -119,7 +216,7 @@ This code jumps the ray to the scene box, if the ray is not inside the scene box
 Returns false if the player is not inside the box or if the ray misses the box.
 */
 bool raytrace_to_scene_box(inout Ray ray){
-	ray.hit = false;
+	ray.hitInfo.hit = false;
 
 	float tEnter, tExit;
 	if (!aabb_intersect(u_viewBoxAnchor, u_viewBoxDim, ray.origin, ray.dir, tEnter, tExit)) {
@@ -127,7 +224,7 @@ bool raytrace_to_scene_box(inout Ray ray){
 	}
 
 	if (insideSceneBox(ray.origin)){
-		ray.hit = true;
+		ray.hitInfo.hit = true;
 		ray.dist = min(ray.dist, tExit);
 		return true;
 	}
@@ -143,14 +240,14 @@ bool raytrace_to_scene_box(inout Ray ray){
 	}
 
 	// Move origin to entry point and reduce remaining distance
-	ray.origin += tEnter * ray.dir;
-	ray.dist -= tEnter;
+	ray.origin += (tEnter + forward_bias_epsilon) * ray.dir;
+	ray.dist -= tEnter + forward_bias_epsilon;
 	// ensure the ray will not leave the box
 	ray.dist = min(ray.dist, tExit - tEnter);
 
 	// Optional: mark that we have entered the box
-	ray.hit = true;
-	ray.colour = vec3(0.0, 0.0, 0.0); // not used for jump, but initialized
+	ray.hitInfo.hit = true;
+	ray.hitInfo.colour = vec3(0.0, 0.0, 0.0); // not used for jump, but initialized
 
 	return true;
 }
@@ -167,8 +264,8 @@ Ray raytrace_scene(Ray ray, float maxDepth){
 	ray_result.origin = ray.origin;
 	ray_result.dir = ray.dir;
 	ray_result.dist = maxDepth;
-	ray_result.hit = false;
-	ray_result.colour = vec3(0.0);
+	ray_result.hitInfo.hit = false;
+	ray_result.hitInfo.colour = vec3(0.0);
 
 	if (!raytrace_to_scene_box(ray_result)){
 		return ray_result;
@@ -176,14 +273,26 @@ Ray raytrace_scene(Ray ray, float maxDepth){
 
 	Ray new_ray;
 	new_ray.origin = ray_result.origin;
-	new_ray.hit = false;
+	new_ray.hitInfo.hit = false;
 	new_ray.dir = ray.dir;
 	new_ray.dist = ray_result.dist;
-	new_ray.colour = vec3(0.0);
+	new_ray.hitInfo.colour = vec3(0.0);
 
-	plane_intersection(vec3(0, 1, 0), -5, new_ray);
-	box_intersection(vec3(15, 0, -1), vec3(10, 10, 5), new_ray);
+	//plane_intersection(vec3(0, 1, 0), -5, new_ray);
+	//box_intersection(vec3(15, 0, -1), vec3(10, 10, 5), new_ray);
+	voxel_grid_intrsection(new_ray);
+	
 	return new_ray;
+}
+
+vec3 processLightingForFinalColour(Ray_Hit rayHitInfo){
+	vec3 toDirectionalSunDirNormal = -normalize(u_directionalSunDirection);
+	
+	float diffuse = dot(rayHitInfo.normal, toDirectionalSunDirNormal);
+	float shade = max(diffuse, 0) * u_diffuseMultiplier + u_diffuseAmbient;
+	
+	vec3 colourOut = rayHitInfo.colour * shade;
+	return colourOut;
 }
 
 void fragment() {
@@ -221,8 +330,8 @@ void fragment() {
 	ray.origin = ray_origin;
 
 	Ray res = raytrace_scene(ray, min(currentDepthWorld, uSceneMaxDist));
-	if (res.hit){
-		ALBEDO = res.colour;
+	if (res.hitInfo.hit){
+		ALBEDO = processLightingForFinalColour(res.hitInfo);
 		ALPHA = 1.0;
 	}
 	else{
