@@ -10,7 +10,7 @@ uniform sampler3D u_voxelDataTexture;
 
 uniform vec3 u_viewBoxAnchor = vec3(0, 0, 0);
 uniform vec3 u_viewBoxDim = vec3(20, 20, 20);
-uniform vec3 u_directionalSunDirection = vec3(10, 30, 5);
+uniform vec3 u_directionalSunDirection = vec3(-10, -30, 5);
 
 uniform float u_diffuseMultiplier = 0.8;
 uniform float u_diffuseAmbient = 0.2;
@@ -286,7 +286,7 @@ Ray raytrace_scene(Ray ray, float maxDepth){
 }
 
 vec3 processLightingForFinalColour(Ray_Hit rayHitInfo){
-	vec3 toDirectionalSunDirNormal = -normalize(u_directionalSunDirection);
+	vec3 toDirectionalSunDirNormal = normalize(u_directionalSunDirection);
 	
 	float diffuse = dot(rayHitInfo.normal, toDirectionalSunDirNormal);
 	float shade = max(diffuse, 0) * u_diffuseMultiplier + u_diffuseAmbient;
